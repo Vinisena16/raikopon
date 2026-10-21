@@ -1,0 +1,95 @@
+name: Build Switch (.nro)
+
+# Manual trigger only: Actions tab -> "Build Switch (.nro)" -> Run workflow.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360   # GitHub's maximum. The very first run builds the NXVK Vulkan driver (slow).
+    steps:
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - name: Checkout (with submodules, including NXVK)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Work out NXVK cache key
+        id: nxvk
+        run: echo "sha=$(git -C externals/nxvk rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # The NXVK driver only needs rebuilding when the externals/nxvk commit changes.
+      - name: Restore cached NXVK build
+        id: nxvk_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            externals/nxvk/switch/build
+            externals/nxvk/switch/rust/sysroot
+          key: nxvk-${{ steps.nxvk.outputs.sha }}
+
+      - name: Build NXVK (Vulkan driver for Switch)
+        id: nxvk_build
+        if: steps.nxvk_cache.outputs.cache-hit != 'true'
+        working-directory: externals/nxvk
+        shell: bash
+        run: |
+          make driver CONTAINER=docker 2>&1 | tee "$GITHUB_WORKSPACE/nxvk-build.log"
+          sudo chown -R "$USER" switch/build switch/rust/sysroot || true
+
+      # Save right after NXVK succeeds, even if the emulator build below fails,
+      # so a retry does not repeat the slow driver build.
+      - name: Save NXVK build to cache
+        if: always() && steps.nxvk_build.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            externals/nxvk/switch/build
+            externals/nxvk/switch/rust/sysroot
+          key: nxvk-${{ steps.nxvk.outputs.sha }}
+
+      - name: Build Raika Azahar (.nro)
+        shell: bash
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work devkitpro/devkita64 bash -lc '
+            set -eux
+            apt-get update
+            apt-get install -y --no-install-recommends cmake ninja-build git python3 pkg-config
+            dkp-pacman -Syu --noconfirm switch-dev switch-freetype switch-bzip2 switch-libpng switch-zlib
+            cmake -S . -B build/switch \
+              -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Switch.cmake \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+            cmake --build build/switch --target citra_switch_nro -j"$(nproc)"
+          ' 2>&1 | tee build.log
+
+      - name: Collect output
+        if: success()
+        run: |
+          mkdir -p out
+          cp build/switch/src/citra_switch/raikopon.nro out/
+          ls -lh out
+
+      - name: Upload .nro
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raikopon-nro
+          path: out/raikopon.nro
+
+      # Logs are uploaded even when the build fails, so you can send them to me.
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build.log
+            nxvk-build.log
+          if-no-files-found: ignore
