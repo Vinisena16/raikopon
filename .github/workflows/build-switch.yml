@@ -20,9 +20,28 @@ jobs:
         with:
           submodules: recursive
 
+      # Raika's repo lists externals/nxvk in .gitmodules but never committed it,
+      # so the checkout above does not create it. Fetch NXVK ourselves, pinned
+      # to the commit this recipe was written against.
+      - name: Fetch NXVK (pinned)
+        shell: bash
+        run: |
+          set -eux
+          rm -rf externals/nxvk
+          mkdir -p externals/nxvk
+          git -C externals/nxvk init
+          git -C externals/nxvk remote add origin https://github.com/PalindromicBreadLoaf/nxvk.git
+          git -C externals/nxvk fetch --depth 1 origin c3abea1efde44027b7e3e20b48eb55beeecd5ab4
+          git -C externals/nxvk checkout FETCH_HEAD
+          test -f externals/nxvk/Makefile
+
       - name: Work out NXVK cache key
         id: nxvk
-        run: echo "sha=$(git -C externals/nxvk rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          set -eu
+          sha="$(git -C externals/nxvk rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       # The NXVK driver only needs rebuilding when the externals/nxvk commit changes.
       - name: Restore cached NXVK build
