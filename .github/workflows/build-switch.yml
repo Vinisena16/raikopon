@@ -89,6 +89,12 @@ jobs:
               > "$f"
           fi
 
+          # Baixa o stb_image.h caso ele esteja faltando no repositório do Raika (Correção do erro do gametdb.cpp)
+          mkdir -p externals/stb
+          if [ ! -f externals/stb/stb_image.h ]; then
+            curl -sSL https://raw.githubusercontent.com/nothings/stb/master/stb_image.h -o externals/stb/stb_image.h
+          fi
+
           # Debug-logging helper that the renderer includes but that was never
           # committed. Every call site is fire-and-forget logging, so a no-op
           # version is behaviour-neutral (it only disables that diagnostic log).
@@ -177,7 +183,8 @@ jobs:
             cmake -S . -B build/switch \
               -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Switch.cmake \
               -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+              -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+              -DCMAKE_CXX_FLAGS="-I$PWD/externals/stb"
             cmake --build build/switch --target citra_switch_nro -j"$(nproc)"
           ' 2>&1 | tee build.log
 
