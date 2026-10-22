@@ -125,6 +125,14 @@ jobs:
           EOF
           fi
 
+          # renderer_vulkan.cpp includes a generated shader header for
+          # vulkan_menu.frag, but that shader source does not exist in the repo
+          # and nothing uses its symbol. Drop the unused include.
+          r=src/video_core/renderer_vulkan/renderer_vulkan.cpp
+          if [ ! -f src/video_core/host_shaders/vulkan_menu.frag ]; then
+            sed -i '/host_shaders\/vulkan_menu_frag\.h/d' "$r"
+          fi
+
       - name: Build Raika Azahar (.nro)
         shell: bash
         run: |
