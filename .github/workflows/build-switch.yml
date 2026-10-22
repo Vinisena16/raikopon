@@ -19,14 +19,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          
+
       - name: Update dynarmic submodule (switch branch)
         shell: bash
         run: |
           set -eux
           git -C externals/dynarmic fetch origin switch
           git -C externals/dynarmic checkout FETCH_HEAD
-          
+
       - name: Fetch NXVK (pinned)
         shell: bash
         run: |
@@ -74,7 +74,7 @@ jobs:
             externals/nxvk/switch/rust/sysroot
           key: nxvk-${{ steps.nxvk.outputs.sha }}
 
-      # Restaura o cache de compilação C++ (ccache) para acelerar builds futuros
+      # Restaura o cache de compilacao C++ (ccache) para acelerar builds futuros
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:
@@ -125,6 +125,7 @@ jobs:
           if [ ! -f src/video_core/host_shaders/vulkan_menu.frag ]; then
             sed -i '/host_shaders\/vulkan_menu_frag\.h/d' "$r"
           fi
+          sed -i 's/"#define ARRAY_DYNAMIC_INDEX"/""/g' "$r"
 
           j=externals/dynarmic/src/dynarmic/interface/jit_log.h
           if [ ! -f "$j" ]; then
@@ -161,8 +162,8 @@ jobs:
               [ "$ok" = 1 ] || { echo "Could not install devkitPro packages (pkg.devkitpro.org refused the download)"; exit 1; }
             fi
 
-            # Compila a libstb_image.a e instala direto nas pastas padrão do devkitPro (portlibs)
-            /opt/devkitpro/devkitA64/bin/aarch64-none-elf-gcc -O2 -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE -I/work/externals/stb -c /work/externals/stb/stb_image_impl.c -o /work/externals/stb/stb_image.o
+            # Compila a libstb_image.a e instala direto nas pastas padrao do devkitPro (portlibs)
+            /opt/devkitpro/devkitA64/bin/aarch64-none-elf-gcc -O2 -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtune=cortex-a57 -mtp=soft -fPIE -I/work/externals/stb -c /work/externals/stb/stb_image_impl.c -o /work/externals/stb/stb_image.o
             /opt/devkitpro/devkitA64/bin/aarch64-none-elf-ar rcs /opt/devkitpro/portlibs/switch/lib/libstb_image.a /work/externals/stb/stb_image.o
             cp /work/externals/stb/stb_image.h /opt/devkitpro/portlibs/switch/include/
 
@@ -182,7 +183,7 @@ jobs:
         with:
           path: .ccache
           key: ccache-switch-${{ github.run_id }}
-          
+
       - name: Collect output
         if: success()
         run: |
@@ -196,6 +197,7 @@ jobs:
         with:
           name: RaikaAzahar-nro
           path: out/*.nro
+
       - name: Upload build logs
         if: always()
         uses: actions/upload-artifact@v4
