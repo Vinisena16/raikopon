@@ -75,6 +75,20 @@ jobs:
             externals/nxvk/switch/rust/sysroot
           key: nxvk-${{ steps.nxvk.outputs.sha }}
 
+      # Raika's CMake copies this license file into the app, but the file was
+      # never committed to its repository. Create a short placeholder if missing.
+      - name: Add file missing from Raika's repo
+        shell: bash
+        run: |
+          f=src/citra_switch/GoogleSansFlex-OFL.txt
+          if [ ! -f "$f" ]; then
+            printf '%s\n' \
+              "Google Sans Flex is licensed under the SIL Open Font License 1.1." \
+              "Full text: https://openfontlicense.org/" \
+              "(Placeholder: this file was not included in the Raika Azahar source repository.)" \
+              > "$f"
+          fi
+
       - name: Build Raika Azahar (.nro)
         shell: bash
         run: |
