@@ -88,7 +88,7 @@ jobs:
               > "$f"
           fi
 
-          # Descarrega o stb_image.h e prepara o ficheiro fonte para gerar a biblioteca libstb_image.a
+          # Baixa o stb_image.h e prepara o arquivo fonte para gerar a biblioteca libstb_image.a
           mkdir -p externals/stb
           if [ ! -f externals/stb/stb_image.h ]; then
             curl -sSL https://raw.githubusercontent.com/nothings/stb/master/stb_image.h -o externals/stb/stb_image.h
@@ -154,22 +154,21 @@ jobs:
               [ "$ok" = 1 ] || { echo "Could not install devkitPro packages (pkg.devkitpro.org refused the download)"; exit 1; }
             fi
 
-            # Compila a biblioteca estática libstb_image.a que o linker pediu aos 100%
+            # Compila a libstb_image.a e instala direto nas pastas padrão do devkitPro (portlibs)
             /opt/devkitpro/devkitA64/bin/aarch64-none-elf-gcc -O2 -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE -I/work/externals/stb -c /work/externals/stb/stb_image_impl.c -o /work/externals/stb/stb_image.o
-            /opt/devkitpro/devkitA64/bin/aarch64-none-elf-ar rcs /work/externals/stb/libstb_image.a /work/externals/stb/stb_image.o
+            /opt/devkitpro/devkitA64/bin/aarch64-none-elf-ar rcs /opt/devkitpro/portlibs/switch/lib/libstb_image.a /work/externals/stb/stb_image.o
+            cp /work/externals/stb/stb_image.h /opt/devkitpro/portlibs/switch/include/
 
             cmake -S . -B build/switch \
               -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Switch.cmake \
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-              -DCMAKE_CXX_FLAGS="-I/work/externals/stb" \
-              -DCMAKE_EXE_LINKER_FLAGS="-L/work/externals/stb"
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
             cmake --build build/switch --target citra_switch_nro -j"$(nproc)"
           ' 2>&1 | tee build.log
 
-      # Guarda os ficheiros compilados no cache mesmo se algo falhar no fim
+      # Guarda os arquivos compilados no cache mesmo se algo falhar no fim
       - name: Save ccache
         if: always()
         uses: actions/cache/save@v4
