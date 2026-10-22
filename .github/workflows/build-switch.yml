@@ -182,21 +182,20 @@ jobs:
         with:
           path: .ccache
           key: ccache-switch-${{ github.run_id }}
-
+          
       - name: Collect output
         if: success()
         run: |
           mkdir -p out
-          cp build/switch/src/citra_switch/raikopon.nro out/
+          cp build/switch/src/citra_switch/RaikaAzahar.nro out/
           ls -lh out
 
       - name: Upload .nro
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: raikopon-nro
-          path: out/raikopon.nro
-
+          name: RaikaAzahar-nro
+          path: out/*.nro
       - name: Upload build logs
         if: always()
         uses: actions/upload-artifact@v4
