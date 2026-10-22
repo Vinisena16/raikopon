@@ -89,6 +89,42 @@ jobs:
               > "$f"
           fi
 
+          # Debug-logging helper that the renderer includes but that was never
+          # committed. Every call site is fire-and-forget logging, so a no-op
+          # version is behaviour-neutral (it only disables that diagnostic log).
+          g=src/common/gpu_frame_log.h
+          if [ ! -f "$g" ]; then
+            cat > "$g" <<'EOF'
+          // Stand-in for a header missing from the Raika Azahar repository.
+          // Diagnostic frame logging is disabled; all functions are no-ops.
+          #pragma once
+
+          #include "common/common_types.h"
+
+          namespace Common::GpuFrameLog {
+
+          inline u64 CurrentFrame() {
+              return 0;
+          }
+
+          inline void RecordInterpreterFallback() {}
+
+          template <typename... Args>
+          inline void LogFrame(Args&&...) {}
+
+          template <typename... Args>
+          inline void LogStall(Args&&...) {}
+
+          template <typename... Args>
+          inline void LogPipelineEvent(Args&&...) {}
+
+          template <typename... Args>
+          inline void LogShaderEvent(Args&&...) {}
+
+          } // namespace Common::GpuFrameLog
+          EOF
+          fi
+
       - name: Build Raika Azahar (.nro)
         shell: bash
         run: |
