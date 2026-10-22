@@ -133,6 +133,24 @@ jobs:
             sed -i '/host_shaders\/vulkan_menu_frag\.h/d' "$r"
           fi
 
+          # Raika's JIT setup calls Dynarmic::SetJitCompileLogEnabled(), a debug-log
+          # switch added to the author's local dynarmic fork but never pushed (the
+          # pinned externals/dynarmic commit has no jit_log.h). Add a no-op version.
+          j=externals/dynarmic/src/dynarmic/interface/jit_log.h
+          if [ ! -f "$j" ]; then
+            cat > "$j" <<'EOF'
+          // Stand-in for a header missing from the pinned dynarmic fork.
+          // JIT-compile diagnostic logging is disabled; the function is a no-op.
+          #pragma once
+
+          namespace Dynarmic {
+
+          inline void SetJitCompileLogEnabled(bool) {}
+
+          } // namespace Dynarmic
+          EOF
+          fi
+
       - name: Build Raika Azahar (.nro)
         shell: bash
         run: |
