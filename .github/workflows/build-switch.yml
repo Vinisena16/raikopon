@@ -82,7 +82,22 @@ jobs:
             set -eux
             apt-get update
             apt-get install -y --no-install-recommends cmake ninja-build git python3 pkg-config
-            dkp-pacman -Syu --noconfirm switch-dev switch-freetype switch-bzip2 switch-libpng switch-zlib
+            echo "== devkitPro packages already in the image =="
+            dkp-pacman -Qq | grep -E "^(libnx|switch-)" || true
+            missing=""
+            for p in libnx switch-freetype switch-bzip2 switch-libpng switch-zlib; do
+              dkp-pacman -Qq "$p" >/dev/null 2>&1 || missing="$missing $p"
+            done
+            echo "missing:$missing"
+            if [ -n "$missing" ]; then
+              ok=0
+              for i in 1 2 3 4 5 6; do
+                if dkp-pacman -Sy --noconfirm --needed $missing; then ok=1; break; fi
+                echo "dkp-pacman attempt $i failed, retrying in 60s"
+                sleep 60
+              done
+              [ "$ok" = 1 ] || { echo "Could not install devkitPro packages (pkg.devkitpro.org refused the download)"; exit 1; }
+            fi
             cmake -S . -B build/switch \
               -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Switch.cmake \
               -DCMAKE_BUILD_TYPE=Release \
