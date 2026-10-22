@@ -7,7 +7,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 360   # GitHub's maximum. The very first run builds the NXVK Vulkan driver (slow).
+    timeout-minutes: 360
     steps:
       - name: Free up disk space
         run: |
@@ -20,9 +20,6 @@ jobs:
         with:
           submodules: recursive
 
-      # Raika's repo lists externals/nxvk in .gitmodules but never committed it,
-      # so the checkout above does not create it. Fetch NXVK ourselves, pinned
-      # to the commit this recipe was written against.
       - name: Fetch NXVK (pinned)
         shell: bash
         run: |
@@ -43,7 +40,6 @@ jobs:
           sha="$(git -C externals/nxvk rev-parse HEAD)"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
-      # The NXVK driver only needs rebuilding when the externals/nxvk commit changes.
       - name: Restore cached NXVK build
         id: nxvk_cache
         uses: actions/cache/restore@v4
@@ -59,13 +55,9 @@ jobs:
         working-directory: externals/nxvk
         shell: bash
         run: |
-          # sudo: the Docker container creates root-owned folders that the
-          # Makefile itself (running on the host) must also be able to write to.
           sudo make driver CONTAINER=docker 2>&1 | tee "$GITHUB_WORKSPACE/nxvk-build.log"
           sudo chown -R "$USER" switch/build switch/rust/sysroot || true
 
-      # Save right after NXVK succeeds, even if the emulator build below fails,
-      # so a retry does not repeat the slow driver build.
       - name: Save NXVK build to cache
         if: always() && steps.nxvk_build.outcome == 'success'
         uses: actions/cache/save@v4
@@ -75,8 +67,15 @@ jobs:
             externals/nxvk/switch/rust/sysroot
           key: nxvk-${{ steps.nxvk.outputs.sha }}
 
-      # Raika's CMake copies this license file into the app, but the file was
-      # never committed to its repository. Create a short placeholder if missing.
+      # Restaura o cache de compilação C++ (ccache) para acelerar builds futuros
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-switch-${{ github.run_id }}
+          restore-keys: |
+            ccache-switch-
+
       - name: Add file missing from Raika's repo
         shell: bash
         run: |
@@ -89,70 +88,43 @@ jobs:
               > "$f"
           fi
 
-          # Baixa o stb_image.h caso ele esteja faltando no repositório do Raika (Correção do erro do gametdb.cpp)
+          # Descarrega o stb_image.h e prepara o ficheiro fonte para gerar a biblioteca libstb_image.a
           mkdir -p externals/stb
           if [ ! -f externals/stb/stb_image.h ]; then
             curl -sSL https://raw.githubusercontent.com/nothings/stb/master/stb_image.h -o externals/stb/stb_image.h
           fi
+          cat > externals/stb/stb_image_impl.c <<'EOF'
+          #define STB_IMAGE_IMPLEMENTATION
+          #include "stb_image.h"
+          EOF
 
-          # Debug-logging helper that the renderer includes but that was never
-          # committed. Every call site is fire-and-forget logging, so a no-op
-          # version is behaviour-neutral (it only disables that diagnostic log).
           g=src/common/gpu_frame_log.h
           if [ ! -f "$g" ]; then
             cat > "$g" <<'EOF'
-          // Stand-in for a header missing from the Raika Azahar repository.
-          // Diagnostic frame logging is disabled; all functions are no-ops.
           #pragma once
-
           #include "common/common_types.h"
-
           namespace Common::GpuFrameLog {
-
-          inline u64 CurrentFrame() {
-              return 0;
-          }
-
+          inline u64 CurrentFrame() { return 0; }
           inline void RecordInterpreterFallback() {}
-
-          template <typename... Args>
-          inline void LogFrame(Args&&...) {}
-
-          template <typename... Args>
-          inline void LogStall(Args&&...) {}
-
-          template <typename... Args>
-          inline void LogPipelineEvent(Args&&...) {}
-
-          template <typename... Args>
-          inline void LogShaderEvent(Args&&...) {}
-
+          template <typename... Args> inline void LogFrame(Args&&...) {}
+          template <typename... Args> inline void LogStall(Args&&...) {}
+          template <typename... Args> inline void LogPipelineEvent(Args&&...) {}
+          template <typename... Args> inline void LogShaderEvent(Args&&...) {}
           } // namespace Common::GpuFrameLog
           EOF
           fi
 
-          # renderer_vulkan.cpp includes a generated shader header for
-          # vulkan_menu.frag, but that shader source does not exist in the repo
-          # and nothing uses its symbol. Drop the unused include.
           r=src/video_core/renderer_vulkan/renderer_vulkan.cpp
           if [ ! -f src/video_core/host_shaders/vulkan_menu.frag ]; then
             sed -i '/host_shaders\/vulkan_menu_frag\.h/d' "$r"
           fi
 
-          # Raika's JIT setup calls Dynarmic::SetJitCompileLogEnabled(), a debug-log
-          # switch added to the author's local dynarmic fork but never pushed (the
-          # pinned externals/dynarmic commit has no jit_log.h). Add a no-op version.
           j=externals/dynarmic/src/dynarmic/interface/jit_log.h
           if [ ! -f "$j" ]; then
             cat > "$j" <<'EOF'
-          // Stand-in for a header missing from the pinned dynarmic fork.
-          // JIT-compile diagnostic logging is disabled; the function is a no-op.
           #pragma once
-
           namespace Dynarmic {
-
           inline void SetJitCompileLogEnabled(bool) {}
-
           } // namespace Dynarmic
           EOF
           fi
@@ -160,10 +132,11 @@ jobs:
       - name: Build Raika Azahar (.nro)
         shell: bash
         run: |
-          docker run --rm -v "$PWD:/work" -w /work devkitpro/devkita64 bash -lc '
+          mkdir -p .ccache
+          docker run --rm -v "$PWD:/work" -w /work -e CCACHE_DIR=/work/.ccache devkitpro/devkita64 bash -lc '
             set -eux
             apt-get update
-            apt-get install -y --no-install-recommends cmake ninja-build git python3 pkg-config
+            apt-get install -y --no-install-recommends cmake ninja-build git python3 pkg-config ccache
             echo "== devkitPro packages already in the image =="
             dkp-pacman -Qq | grep -E "^(libnx|switch-)" || true
             missing=""
@@ -180,13 +153,29 @@ jobs:
               done
               [ "$ok" = 1 ] || { echo "Could not install devkitPro packages (pkg.devkitpro.org refused the download)"; exit 1; }
             fi
+
+            # Compila a biblioteca estática libstb_image.a que o linker pediu aos 100%
+            /opt/devkitpro/devkitA64/bin/aarch64-none-elf-gcc -O2 -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE -I/work/externals/stb -c /work/externals/stb/stb_image_impl.c -o /work/externals/stb/stb_image.o
+            /opt/devkitpro/devkitA64/bin/aarch64-none-elf-ar rcs /work/externals/stb/libstb_image.a /work/externals/stb/stb_image.o
+
             cmake -S . -B build/switch \
               -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Switch.cmake \
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-              -DCMAKE_CXX_FLAGS="-I$PWD/externals/stb"
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_FLAGS="-I/work/externals/stb" \
+              -DCMAKE_EXE_LINKER_FLAGS="-L/work/externals/stb"
             cmake --build build/switch --target citra_switch_nro -j"$(nproc)"
           ' 2>&1 | tee build.log
+
+      # Guarda os ficheiros compilados no cache mesmo se algo falhar no fim
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-switch-${{ github.run_id }}
 
       - name: Collect output
         if: success()
@@ -202,7 +191,6 @@ jobs:
           name: raikopon-nro
           path: out/raikopon.nro
 
-      # Logs are uploaded even when the build fails, so you can send them to me.
       - name: Upload build logs
         if: always()
         uses: actions/upload-artifact@v4
